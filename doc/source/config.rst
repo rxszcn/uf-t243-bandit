@@ -22,6 +22,25 @@ The currently supported arguments are:
 ``tests``
   comma separated list of tests to run
 
+Boolean and numeric options are typed.  Because an INI file has no native
+boolean or integer type, every value is read as a string and Bandit coerces
+it before use (an unparseable value aborts the run with an error instead of
+being treated as a truthy string or crashing later):
+
+``recursive``, ``ignore-nosec``, ``verbose``, ``debug``, ``quiet``
+  boolean; accepted true values are ``1``, ``true``, ``yes``, ``on``,
+  ``enable``/``enabled`` and the matching false values ``0``, ``false``,
+  ``no``, ``off``, ``disable``/``disabled`` (case-insensitive).
+  For example ``recursive = false`` restricts a directory target to its
+  top level, and ``ignore-nosec = false`` keeps honoring ``# nosec``.
+``level``, ``confidence``
+  integer thresholds from ``1`` to ``4`` (see ``-l``/``-i``).
+``number``
+  integer number of context lines per issue.
+
+When the same option is supplied both in the INI file and on the command
+line, the command line value takes precedence.
+
 To use this, put an INI file named `.bandit` in your project's directory.
 Command line arguments must be in `[bandit]` section.
 For example:
@@ -33,6 +52,9 @@ For example:
   exclude = tests,path/to/file
   tests = B201,B301
   skips = B101,B601
+  recursive = false
+  ignore-nosec = false
+  level = 2
 
 Alternatively, put a YAML or TOML file anywhere, and use the `-c` option.
 For example:

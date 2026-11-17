@@ -108,6 +108,29 @@ def _running_under_virtualenv():
         return True
 
 
+def _ini_bool(ini_options, key):
+    """Read a boolean option from parsed INI data with type coercion.
+
+    The INI layer only carries strings; never pass the raw value through to
+    consumers, otherwise e.g. ``"false"`` evaluates as truthy.  Returns None
+    when the key is absent so the CLI/default value wins unchanged.
+    """
+    if key not in ini_options:
+        return None
+    return utils.coerce_ini_bool(ini_options.get(key), key)
+
+
+def _ini_int(ini_options, key):
+    """Read an integer option from parsed INI data with type coercion.
+
+    Returns None when the key is absent; an unparseable value raises
+    utils.IniConfigError which is reported and exits cleanly in main().
+    """
+    if key not in ini_options:
+        return None
+    return utils.coerce_ini_int(ini_options.get(key), key)
+
+
 def _get_profile(config, profile_name, config_path):
     profile = {}
     if profile_name:
@@ -457,145 +480,164 @@ def main():
     # Handle .bandit files in projects to pass cmdline args from file
     ini_options = _get_options_from_ini(args.ini_path, args.targets)
     if ini_options:
-        # prefer command line, then ini file
-        args.config_file = _log_option_source(
-            parser.get_default("configfile"),
-            args.config_file,
-            ini_options.get("configfile"),
-            "config file",
-        )
+        # Numeric and boolean options are coerced to their real types here,
+        # at the single CLI/INI merge point: configparser only yields strings,
+        # and consuming them raw caused "false" to be truthy and string
+        # thresholds to crash after the scan.  A bad value is a config error
+        # and terminates cleanly with exit code 2 instead of a traceback.
+        try:
+            # prefer command line, then ini file
+            args.config_file = _log_option_source(
+                parser.get_default("configfile"),
+                args.config_file,
+                ini_options.get("configfile"),
+                "config file",
+            )
 
-        args.excluded_paths = _log_option_source(
-            parser.get_default("excluded_paths"),
-            args.excluded_paths,
-            ini_options.get("exclude"),
-            "excluded paths",
-        )
+            args.excluded_paths = _log_option_source(
+                parser.get_default("excluded_paths"),
+                args.excluded_paths,
+                ini_options.get("exclude"),
+                "excluded paths",
+            )
 
-        args.skips = _log_option_source(
-            parser.get_default("skips"),
-            args.skips,
-            ini_options.get("skips"),
-            "skipped tests",
-        )
+            args.skips = _log_option_source(
+                parser.get_default("skips"),
+                args.skips,
+                ini_options.get("skips"),
+                "skipped tests",
+            )
 
-        args.tests = _log_option_source(
-            parser.get_default("tests"),
-            args.tests,
-            ini_options.get("tests"),
-            "selected tests",
-        )
+            args.tests = _log_option_source(
+                parser.get_default("tests"),
+                args.tests,
+                ini_options.get("tests"),
+                "selected tests",
+            )
 
-        ini_targets = ini_options.get("targets")
-        if ini_targets:
-            ini_targets = ini_targets.split(",")
+            ini_targets = ini_options.get("targets")
+            if ini_targets:
+                ini_targets = ini_targets.split(",")
 
-        args.targets = _log_option_source(
-            parser.get_default("targets"),
-            args.targets,
-            ini_targets,
-            "selected targets",
-        )
+            args.targets = _log_option_source(
+                parser.get_default("targets"),
+                args.targets,
+                ini_targets,
+                "selected targets",
+            )
 
-        # TODO(tmcpeak): any other useful options to pass from .bandit?
+            # TODO(tmcpeak): any other useful options to pass from .bandit?
 
-        args.recursive = _log_option_source(
-            parser.get_default("recursive"),
-            args.recursive,
-            ini_options.get("recursive"),
-            "recursive scan",
-        )
+            args.recursive = _log_option_source(
+                parser.get_default("recursive"),
+                args.recursive,
+                _ini_bool(ini_options, "recursive"),
+                "recursive scan",
+            )
 
-        args.agg_type = _log_option_source(
-            parser.get_default("agg_type"),
-            args.agg_type,
-            ini_options.get("aggregate"),
-            "aggregate output type",
-        )
+            args.agg_type = _log_option_source(
+                parser.get_default("agg_type"),
+                args.agg_type,
+                ini_options.get("aggregate"),
+                "aggregate output type",
+            )
 
-        args.context_lines = _log_option_source(
-            parser.get_default("context_lines"),
-            args.context_lines,
-            int(ini_options.get("number") or 0) or None,
-            "max code lines output for issue",
-        )
+            args.context_lines = _log_option_source(
+                parser.get_default("context_lines"),
+                args.context_lines,
+                _ini_int(ini_options, "number"),
+                "max code lines output for issue",
+            )
 
-        args.profile = _log_option_source(
-            parser.get_default("profile"),
-            args.profile,
-            ini_options.get("profile"),
-            "profile",
-        )
+            args.profile = _log_option_source(
+                parser.get_default("profile"),
+                args.profile,
+                ini_options.get("profile"),
+                "profile",
+            )
 
-        args.severity = _log_option_source(
-            parser.get_default("severity"),
-            args.severity,
-            ini_options.get("level"),
-            "severity level",
-        )
+            args.severity = _log_option_source(
+                parser.get_default("severity"),
+                args.severity,
+                _ini_int(ini_options, "level"),
+                "severity level",
+            )
 
-        args.confidence = _log_option_source(
-            parser.get_default("confidence"),
-            args.confidence,
-            ini_options.get("confidence"),
-            "confidence level",
-        )
+            args.confidence = _log_option_source(
+                parser.get_default("confidence"),
+                args.confidence,
+                _ini_int(ini_options, "confidence"),
+                "confidence level",
+            )
 
-        args.output_format = _log_option_source(
-            parser.get_default("output_format"),
-            args.output_format,
-            ini_options.get("format"),
-            "output format",
-        )
+            args.output_format = _log_option_source(
+                parser.get_default("output_format"),
+                args.output_format,
+                ini_options.get("format"),
+                "output format",
+            )
 
-        args.msg_template = _log_option_source(
-            parser.get_default("msg_template"),
-            args.msg_template,
-            ini_options.get("msg-template"),
-            "output message template",
-        )
+            args.msg_template = _log_option_source(
+                parser.get_default("msg_template"),
+                args.msg_template,
+                ini_options.get("msg-template"),
+                "output message template",
+            )
 
-        args.output_file = _log_option_source(
-            parser.get_default("output_file"),
-            args.output_file,
-            ini_options.get("output"),
-            "output file",
-        )
+            args.output_file = _log_option_source(
+                parser.get_default("output_file"),
+                args.output_file,
+                ini_options.get("output"),
+                "output file",
+            )
 
-        args.verbose = _log_option_source(
-            parser.get_default("verbose"),
-            args.verbose,
-            ini_options.get("verbose"),
-            "output extra information",
-        )
+            args.verbose = _log_option_source(
+                parser.get_default("verbose"),
+                args.verbose,
+                _ini_bool(ini_options, "verbose"),
+                "output extra information",
+            )
 
-        args.debug = _log_option_source(
-            parser.get_default("debug"),
-            args.debug,
-            ini_options.get("debug"),
-            "debug mode",
-        )
+            args.debug = _log_option_source(
+                parser.get_default("debug"),
+                args.debug,
+                _ini_bool(ini_options, "debug"),
+                "debug mode",
+            )
 
-        args.quiet = _log_option_source(
-            parser.get_default("quiet"),
-            args.quiet,
-            ini_options.get("quiet"),
-            "silent mode",
-        )
+            args.quiet = _log_option_source(
+                parser.get_default("quiet"),
+                args.quiet,
+                _ini_bool(ini_options, "quiet"),
+                "silent mode",
+            )
 
-        args.ignore_nosec = _log_option_source(
-            parser.get_default("ignore_nosec"),
-            args.ignore_nosec,
-            ini_options.get("ignore-nosec"),
-            "do not skip lines with # nosec",
-        )
+            args.ignore_nosec = _log_option_source(
+                parser.get_default("ignore_nosec"),
+                args.ignore_nosec,
+                _ini_bool(ini_options, "ignore-nosec"),
+                "do not skip lines with # nosec",
+            )
 
-        args.baseline = _log_option_source(
-            parser.get_default("baseline"),
-            args.baseline,
-            ini_options.get("baseline"),
-            "path of a baseline report",
-        )
+            args.baseline = _log_option_source(
+                parser.get_default("baseline"),
+                args.baseline,
+                ini_options.get("baseline"),
+                "path of a baseline report",
+            )
+
+            # Reject out-of-range thresholds now rather than indexing
+            # RANKING with a bad value at report time.
+            for threshold_name in ("severity", "confidence"):
+                value = getattr(args, threshold_name)
+                if not 1 <= value <= len(constants.RANKING):
+                    raise utils.IniConfigError(
+                        f"Option '{threshold_name}' in .bandit must be "
+                        f"between 1 and {len(constants.RANKING)}, got {value}."
+                    )
+        except utils.IniConfigError as e:
+            LOG.error(e)
+            sys.exit(2)
 
     try:
         b_conf = b_config.BanditConfig(config_file=args.config_file)

@@ -112,6 +112,88 @@ class ProfileNotFound(Exception):
         super().__init__(message)
 
 
+class IniConfigError(ValueError):
+    """Raised when an .bandit (INI) option cannot be coerced to its type.
+
+    configparser only ever returns strings, so numeric and boolean options
+    must be explicitly coerced before they are consumed.  An unparseable
+    value is a user configuration error, not a crash: callers are expected
+    to report it and exit cleanly.
+    """
+
+    pass
+
+
+# Token sets accepted by coerce_ini_bool.  INI has no native boolean type,
+# so the spelling is normalised (case-insensitive, surrounding whitespace
+# stripped) before matching.
+_INI_TRUE_VALUES = frozenset(
+    {"1", "true", "yes", "y", "on", "enable", "enabled"}
+)
+_INI_FALSE_VALUES = frozenset(
+    {"0", "false", "no", "n", "off", "disable", "disabled", ""}
+)
+
+
+def coerce_ini_bool(value, option_name):
+    """Coerce an INI option value to a real bool.
+
+    configparser returns every option as a string; passing such a string
+    straight through makes ``"false"`` truthy, silently inverting flags
+    such as ``recursive`` or ``ignore-nosec``.
+
+    :param value: the raw INI value (only str needs coercion)
+    :param option_name: INI key name, used in the error message
+    :return: the coerced bool
+    :raises IniConfigError: if the value is not a recognised boolean token
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    token = str(value).strip().lower()
+    if token in _INI_TRUE_VALUES:
+        return True
+    if token in _INI_FALSE_VALUES:
+        return False
+    raise IniConfigError(
+        f"Invalid boolean value {value!r} for option '{option_name}' in "
+        f".bandit; expected one of {sorted(_INI_TRUE_VALUES)} (true) or "
+        f"{sorted(v for v in _INI_FALSE_VALUES if v)} (false)."
+    )
+
+
+def coerce_ini_int(value, option_name):
+    """Coerce an INI option value to a real int.
+
+    A raw string such as ``"2"`` cannot participate in arithmetic or
+    sequence indexing (``args.severity - 1`` / ``RANKING[...]``), which
+    previously surfaced as an uncaught TypeError after the scan finished.
+
+    :param value: the raw INI value (only str needs coercion)
+    :param option_name: INI key name, used in the error message
+    :return: the coerced int
+    :raises IniConfigError: if the value does not parse as a base-10 int
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        # bool is a subclass of int; reject it explicitly to avoid surprises.
+        raise IniConfigError(
+            f"Invalid integer value {value!r} for option '{option_name}' "
+            "in .bandit."
+        )
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value).strip(), 10)
+    except (TypeError, ValueError):
+        raise IniConfigError(
+            f"Invalid integer value {value!r} for option '{option_name}' "
+            "in .bandit."
+        )
+
+
 def warnings_formatter(
     message, category=UserWarning, filename="", lineno=-1, line=""
 ):
